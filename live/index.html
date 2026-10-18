@@ -1,0 +1,639 @@
+<title>Fly Brain Maze Lab</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lexend:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+  /* Layout: a sim lab bench. Control drawers on the left, the arena (or two, for a race) in the middle,
+     the selected fly's brain and the race scoreboard on the right. */
+  :root {
+    --bg: #e8eef3;
+    --panel: #ffffff;
+    --line: #cfd9e2;
+    --fg: #1d2a35;
+    --muted: #5d6f7e;
+    --accent: #e08a1e;     /* food */
+    --solo: #2f7fd1;
+    --pack: #cf4d6f;
+    --chip: #f1f5f8;
+    --scene: #dfe7ee;
+    --display: "Lexend", "Trebuchet MS", system-ui, sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+    --bg: #11171d; --panel: #18212a; --line: #2a3742; --fg: #e3eaf0; --muted: #93a4b3;
+    --accent: #f0a043; --solo: #5ea4ec; --pack: #ec6e8f; --chip: #202b35; --scene: #141c23; color-scheme: dark; } }
+  :root[data-theme="dark"] {
+    --bg: #11171d; --panel: #18212a; --line: #2a3742; --fg: #e3eaf0; --muted: #93a4b3;
+    --accent: #f0a043; --solo: #5ea4ec; --pack: #ec6e8f; --chip: #202b35; --scene: #141c23; color-scheme: dark; }
+  html, body { height: 100%; }
+  body { background: var(--bg); color: var(--fg); font: 13px/1.45 var(--display); }
+  #app { display: grid; grid-template-columns: 290px minmax(0, 1fr) 330px; grid-template-rows: auto minmax(0, 1fr); height: 100%; }
+  header { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; background: var(--panel);
+    border-bottom: 1px solid var(--line); padding-block: 10px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  header h1 { margin: 0; font-size: 18px; font-weight: 700; letter-spacing: -.01em; }
+  .tabs { display: flex; gap: 4px; background: var(--chip); padding: 3px; border-radius: 999px; }
+  .tabs button { border: 0; background: transparent; color: var(--muted); font: 500 13px var(--display); padding: 6px 14px; border-radius: 999px; cursor: pointer; }
+  .tabs button[aria-selected="true"] { background: var(--panel); color: var(--fg); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+  .clock { margin-left: auto; display: flex; gap: 14px; font: 12px var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; align-items: center; }
+  .clock b { color: var(--fg); font-weight: 500; }
+  .play { display: flex; gap: 6px; }
+  .btn { font: 600 13px var(--display); border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--fg);
+    padding: 7px 12px; cursor: pointer; }
+  .btn.go { background: var(--accent); border-color: var(--accent); color: #1b1206; min-width: 74px; }
+  .btn:disabled { opacity: .5; cursor: default; }
+  .btn:focus-visible, input:focus-visible, .tabs button:focus-visible, .flychip:focus-visible { outline: 2px solid var(--solo); outline-offset: 2px; }
+  aside { overflow-y: auto; min-width: 0; padding-block: 12px; padding-left: max(12px, env(safe-area-inset-left, 0px)); padding-right: 12px;
+    display: flex; flex-direction: column; gap: 10px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+  .card h2 { margin: 0; font-size: 13px; font-weight: 600; display: flex; justify-content: space-between; align-items: baseline; }
+  .card h2 small { font-weight: 400; color: var(--muted); font-size: 11px; }
+  .row { display: grid; grid-template-columns: 1fr 96px 42px; gap: 8px; align-items: center; }
+  .row label { color: var(--fg); }
+  .row output { font: 12px var(--mono); color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--solo); }
+  .check { display: flex; align-items: center; gap: 8px; }
+  .check input { accent-color: var(--solo); width: 16px; height: 16px; }
+  .checks { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 8px; }
+  .hint { color: var(--muted); font-size: 11.5px; margin: 0; }
+  #stage { position: relative; min-width: 0; min-height: 0; display: grid; gap: 8px; padding: 12px 0; }
+  #stage.race { grid-template-columns: 1fr 1fr; }
+  .arena { position: relative; min-width: 0; min-height: 0; background: var(--scene); border-radius: 14px; overflow: hidden; border: 1px solid var(--line); }
+  .arena canvas { display: block; width: 100%; height: 100%; }
+  .badge { position: absolute; left: 10px; top: 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 999px;
+    padding: 4px 10px; font-weight: 600; display: flex; gap: 8px; align-items: center; }
+  .badge i { width: 10px; height: 10px; border-radius: 50%; }
+  .badge span { font: 12px var(--mono); color: var(--muted); font-weight: 400; font-variant-numeric: tabular-nums; }
+  .legendmaze { position: absolute; left: 10px; bottom: 10px; font-size: 11px; color: var(--muted); background: var(--panel);
+    border-radius: 8px; padding: 4px 8px; border: 1px solid var(--line); }
+  #right { overflow-y: auto; min-width: 0; padding-block: 12px; padding-right: max(12px, env(safe-area-inset-right, 0px)); padding-left: 12px;
+    display: flex; flex-direction: column; gap: 10px; }
+  #brainbox { position: relative; height: 250px; border-radius: 10px; overflow: hidden; background: var(--scene); }
+  #brainbox canvas { display: block; width: 100%; height: 100%; }
+  .flychips { display: flex; flex-wrap: wrap; gap: 4px; }
+  .flychip { border: 1px solid var(--line); background: var(--chip); color: var(--fg); border-radius: 999px; padding: 2px 9px; font: 12px var(--display); cursor: pointer;
+    display: flex; gap: 5px; align-items: center; }
+  .flychip i { width: 8px; height: 8px; border-radius: 50%; }
+  .flychip[aria-pressed="true"] { border-color: var(--fg); }
+  .flychip.done::after { content: "fed"; font-size: 10px; color: var(--muted); }
+  .regs { display: grid; gap: 3px; }
+  .reg { display: grid; grid-template-columns: 9px 1fr 70px 36px; gap: 6px; align-items: center; font-size: 12px; }
+  .reg i { width: 8px; height: 8px; border-radius: 50%; }
+  .reg .rb { height: 6px; border-radius: 3px; background: var(--chip); overflow: hidden; }
+  .reg .rb s { display: block; height: 100%; width: 0; }
+  .reg output { font: 11px var(--mono); color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+  .steerbar { display: grid; grid-template-columns: auto 1fr; gap: 6px; align-items: center; font-size: 12px; }
+  .meter { position: relative; height: 10px; border-radius: 5px; background: var(--chip); }
+  .meter::before { content: ""; position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: var(--muted); }
+  .meter i { position: absolute; top: 2px; height: 6px; width: 6px; margin-left: -3px; border-radius: 50%; background: var(--accent); left: 50%; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+  th { text-align: left; font-weight: 500; color: var(--muted); padding: 3px 4px; border-bottom: 1px solid var(--line); }
+  td { padding: 3px 4px; border-bottom: 1px solid var(--line); font-family: var(--mono); }
+  td.w-solo { color: var(--solo); font-weight: 600; }
+  td.w-pack { color: var(--pack); font-weight: 600; }
+  .tally { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .tally div { background: var(--chip); border-radius: 8px; padding: 6px 8px; }
+  .tally b { display: block; font-size: 18px; font-family: var(--mono); font-weight: 500; }
+  .tally .s b { color: var(--solo); } .tally .p b { color: var(--pack); }
+  .tablewrap { overflow-x: auto; max-height: 220px; overflow-y: auto; }
+  #loading { position: fixed; inset: 0; display: grid; place-items: center; background: var(--bg); z-index: 20; }
+  #loading div { text-align: center; display: grid; gap: 8px; max-width: 36ch; }
+  #loading progress { width: 240px; accent-color: var(--accent); }
+  [hidden] { display: none !important; }
+  @media (max-width: 1100px) {
+    #app { grid-template-columns: 1fr; grid-template-rows: auto 70vh auto auto; height: auto; }
+    header { order: 1; } #stage { order: 2; } #right { order: 3; } aside { order: 4; }
+    html, body { height: auto; }
+    aside, #right { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+    #stage { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+    #stage.race { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
+    .clock { margin-left: 0; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div id="loading"><div><b>Loading the fly brain</b><span class="hint" id="loadmsg">22,534 neurons and 3.1 million synapses from the FlyWire connectome</span><progress id="loadbar" max="4" value="0"></progress></div></div>
+
+<div id="app">
+  <header>
+    <h1>Fly Brain Maze Lab</h1>
+    <div class="tabs" role="tablist">
+      <button role="tab" id="tab-explore" aria-selected="true">Explore</button>
+      <button role="tab" id="tab-race" aria-selected="false">Solo vs Pack</button>
+    </div>
+    <div class="play">
+      <button class="btn go" id="playbtn">Play</button>
+      <button class="btn" id="resetbtn" title="Put the same flies back at the start">Reset</button>
+    </div>
+    <div class="clock"><span>Time <b id="clock">0.0 s</b></span><span>Speed <b id="pace">-</b></span><span>Flies <b id="nflies">0</b></span></div>
+  </header>
+
+  <aside>
+    <section class="card">
+      <h2>Maze <small>new layout every time</small></h2>
+      <div class="row"><label for="mazeSize">Size</label><input type="range" id="mazeSize" min="3" max="10" value="4"><output id="mazeSize_o">4x4</output></div>
+      <div class="row"><label for="complexity">Loops and shortcuts</label><input type="range" id="complexity" min="0" max="40" value="10"><output id="complexity_o">10%</output></div>
+      <button class="btn" id="newMaze">New maze</button>
+    </section>
+
+    <section class="card">
+      <h2>Flies <small>new individuals every time</small></h2>
+      <div class="row" id="row-flies"><label for="nFlies">Flies</label><input type="range" id="nFlies" min="1" max="12" value="3"><output id="nFlies_o">3</output></div>
+      <div class="row" id="row-pack" hidden><label for="packSize">Pack size</label><input type="range" id="packSize" min="2" max="10" value="5"><output id="packSize_o">5</output></div>
+      <div class="check"><input type="checkbox" id="smellEach" checked><label for="smellEach">Flies smell each other</label></div>
+      <div class="check"><input type="checkbox" id="seeEach" checked><label for="seeEach">Flies see each other</label></div>
+      <div class="check"><input type="checkbox" id="follow" checked><label for="follow">Fed flies mark the food, others follow the mark</label></div>
+      <p class="hint">Following the mark is an added rule. In the real wiring the pheromone barely reaches the steering neurons.</p>
+      <div class="row"><label for="trail">Trail strength</label><input type="range" id="trail" min="0" max="200" value="100"><output id="trail_o">100%</output></div>
+      <div class="check"><input type="checkbox" id="smellFood" checked><label for="smellFood">Food has a smell</label></div>
+      <div class="row" id="row-nosmell"><label for="noSmell">Flies that can't smell food</label><input type="range" id="noSmell" min="0" max="12" value="0"><output id="noSmell_o">0</output></div>
+      <div class="row"><label for="walk">Walking speed</label><input type="range" id="walk" min="2" max="20" value="8"><output id="walk_o">8 mm/s</output></div>
+      <button class="btn" id="newFlies">New flies</button>
+    </section>
+
+    <section class="card">
+      <h2>Brain controls</h2>
+      <div class="row"><label for="sens">Smell sensitivity</label><input type="range" id="sens" min="0" max="200" value="100"><output id="sens_o">100%</output></div>
+      <div class="row"><label for="steerGain">Steering strength</label><input type="range" id="steerGain" min="0" max="8" step="0.5" value="2"><output id="steerGain_o">2</output></div>
+      <div class="row"><label for="wander">Random wandering</label><input type="range" id="wander" min="0" max="3" step="0.1" value="0.5"><output id="wander_o">0.5</output></div>
+      <p class="hint">These three change the flies right away. The ones below apply when you press New flies.</p>
+      <div class="row"><label for="fatigue">Synapse fatigue</label><input type="range" id="fatigue" min="0.1" max="0.9" step="0.05" value="0.5"><output id="fatigue_o">0.50</output></div>
+      <div class="row"><label for="indiv">Individuality</label><input type="range" id="indiv" min="0" max="2" step="0.1" value="0.5"><output id="indiv_o">0.5 mV</output></div>
+      <div class="check"><input type="checkbox" id="precise"><label for="precise">Precise timing (0.25 ms steps, slower)</label></div>
+      <h2 style="margin-top:4px">Switch off a brain region</h2>
+      <div class="checks" id="silence"></div>
+      <p class="hint">Switching off a region stops all of its neurons, like silencing them in a real fly.</p>
+    </section>
+  </aside>
+
+  <main id="stage"></main>
+
+  <div id="right">
+    <section class="card">
+      <h2><span>Brain of <span id="focusname">fly 1</span></span></h2>
+      <div id="brainbox"></div>
+      <div class="flychips" id="flychips"></div>
+      <div class="steerbar"><span>Turning</span><div class="meter"><i id="steerdot"></i></div></div>
+      <p class="hint">Each dot is a neuron in its real place. Bright dots are firing right now. Left of centre means turning left.</p>
+      <div class="regs" id="regs"></div>
+    </section>
+    <section class="card" id="racecard" hidden>
+      <h2>Races <small id="raceinfo">first fly to the food</small></h2>
+      <div class="tally"><div class="s">Solo wins<b id="soloWins">0</b></div><div class="p">Pack wins<b id="packWins">0</b></div></div>
+      <div class="check"><input type="checkbox" id="autorace" checked><label for="autorace">Start a new race (new maze, new flies) when one ends</label></div>
+      <div class="row"><label for="limit">Time limit</label><input type="range" id="limit" min="30" max="300" step="10" value="120"><output id="limit_o">120 s</output></div>
+      <div class="tablewrap"><table><thead><tr><th>#</th><th>Maze</th><th>Solo</th><th>Pack first</th><th>Pack fed</th></tr></thead><tbody id="races"></tbody></table></div>
+    </section>
+  </div>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { World, Trails, Fly, senses, CELL_PX } from './world.js';
+
+const $ = id => document.getElementById(id);
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const REGION_COLORS = ['#f2b33d', '#f07c4e', '#c06b8a', '#9a7fd0', '#3f8fdc', '#e2574c', '#ff3f86', '#6fae7a', '#2fb0a3', '#c9a227', '#7c8a97'];
+const FLY_COLORS = ['#e6a61c', '#2f7fd1', '#cf4d6f', '#3fa36a', '#8a63c9', '#e07a3a', '#1fa59a', '#d63d8a', '#9a8a1c', '#5a7fa0', '#b5564a', '#4c9bd6'];
+const BODY_DT = 0.01;  // s of simulated time per body step
+
+// ---------------- state ----------------
+const P = {};
+const sliders = {
+  mazeSize: v => `${v}x${v}`, complexity: v => `${v}%`, nFlies: v => v, packSize: v => v, trail: v => `${v}%`,
+  walk: v => `${v} mm/s`, sens: v => `${v}%`, steerGain: v => v, wander: v => (+v).toFixed(1), fatigue: v => (+v).toFixed(2),
+  indiv: v => `${(+v).toFixed(1)} mV`, limit: v => `${v} s`, noSmell: v => v,
+};
+function readControls() {
+  for (const k of Object.keys(sliders)) { P[k] = +$(k).value; $(k + '_o').textContent = sliders[k]($(k).value); }
+  P.smellEach = $('smellEach').checked; P.seeEach = $('seeEach').checked; P.follow = $('follow').checked; P.smellFood = $('smellFood').checked; P.precise = $('precise').checked;
+  P.autorace = $('autorace').checked;
+  P.silenced = [...document.querySelectorAll('#silence input:checked')].map(c => +c.value);
+}
+
+let mode = 'explore';
+let running = false;
+let arenas = [];       // {world, flies, trails, social, label, color, view}
+let flyIndex = [];     // global id -> {arena, fly}
+let focus = 0;
+let simT = 0;
+let seedBase = (Date.now() ^ (Math.random() * 1e9)) >>> 0;
+let mazeSeed = seedBase;
+let races = [];
+
+// ---------------- workers ----------------
+let workers = [], net = null, meta = null, cloud = null;
+const nWorkers = Math.max(1, Math.min(6, (navigator.hardwareConcurrency || 4) - 1));
+
+async function fetchGz(url) {
+  const b64 = (await fetch(url).then(r => r.text())).trim();
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
+  return new Response(stream).arrayBuffer();
+}
+
+async function boot() {
+  const bar = $('loadbar');
+  meta = await fetch('meta.json').then(r => r.json()); bar.value = 1;
+  const [netBuf, cloudBuf] = await Promise.all([fetchGz('brain.b64.txt'), fetchGz('cloud.b64.txt')]); bar.value = 3;
+  net = netBuf; cloud = cloudBuf;
+  workers = await Promise.all(Array.from({ length: nWorkers }, () => new Promise(res => {
+    const w = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
+    w.onmessage = e => { if (e.data.type === 'ready') { w.onmessage = null; res(w); } };
+    w.postMessage({ type: 'net', buf: net.slice(0) });
+  })));
+  bar.value = 4;
+  // full-brain picture: 138,639 dots; only the simulated part lights up
+  const h = new Int32Array(net, 0, 4);
+  fullIndex = new Int32Array(net.slice(16, 16 + h[0] * 4));
+  buildBrainView();
+  $('silence').innerHTML = meta.regions.slice(0, 10).map((r, i) =>
+    `<div class="check"><input type="checkbox" id="sil${i}" value="${i}"><label for="sil${i}">${r}</label></div>`).join('');
+  $('regs').innerHTML = meta.regions.map((r, i) =>
+    `<div class="reg"><i style="background:${REGION_COLORS[i]}"></i><span>${r}</span><div class="rb"><s id="rb${i}" style="background:${REGION_COLORS[i]}"></s></div><output id="rv${i}">0</output></div>`).join('');
+  $('loading').hidden = true;
+  readControls();
+  await setup(true, true);
+}
+
+function call(w, msg) {
+  return new Promise(res => {
+    w.onmessage = e => res(e.data);
+    w.postMessage(msg);
+  });
+}
+
+// ---------------- building a run ----------------
+async function setup(newMaze, newFlies) {
+  running = false; setPlay();
+  readControls();
+  if (newMaze) mazeSeed = (mazeSeed * 1103515245 + 12345) >>> 0;
+  if (newFlies) seedBase = (seedBase * 2654435761 + 97) >>> 0;
+  const mk = () => new World({ w: P.mazeSize, h: P.mazeSize, complexity: P.complexity / 100, seed: mazeSeed });
+  const specs = mode === 'race'
+    ? [{ label: 'Solo fly', color: css('--solo'), n: 1, social: false }, { label: `Pack of ${P.packSize}`, color: css('--pack'), n: P.packSize, social: true }]
+    : [{ label: '', color: css('--solo'), n: P.nFlies, social: true }];
+  arenas = []; flyIndex = [];
+  let id = 0;
+  for (const s of specs) {
+    const world = mk();
+    const flies = [];
+    for (let i = 0; i < s.n; i++) {
+      const f = new Fly(id, world, seedBase + id * 101);
+      f.color = FLY_COLORS[id % FLY_COLORS.length];
+      flies.push(f); flyIndex[id] = { arenaIdx: arenas.length, fly: f, local: i }; id++;
+    }
+    arenas.push({ world, flies, trails: new Trails(world, s.n), social: s.social, label: s.label, color: s.color, firstAt: null });
+  }
+  simT = 0; focus = 0;
+  // brains: spread flies over the workers
+  const opts = { dt: P.precise ? 0.25 : 0.5, fatigue: P.fatigue, individuality: P.indiv, silenced: P.silenced };
+  const perWorker = workers.map(() => []);
+  flyIndex.forEach((f, i) => { f.worker = i % workers.length; perWorker[f.worker].push({ id: i, opts: { ...opts, seed: seedBase + i * 977 } }); });
+  await Promise.all(workers.map((w, i) => call(w, { type: 'flies', flies: perWorker[i] })));
+  buildStage();
+  buildChips();
+  updateClock(0);
+}
+
+// ---------------- simulation loop ----------------
+let seq = 0, paceT0 = 0, paceSim0 = 0;
+async function loop() {
+  paceT0 = performance.now(); paceSim0 = simT;
+  while (running) {
+    await stepAll();
+    if (!running) break;
+    if (simT - paceSim0 > 2) { paceT0 = performance.now(); paceSim0 = simT; }
+  }
+}
+
+async function stepAll() {
+  const nSteps = Math.round(BODY_DT * 1000 / (P.precise ? 0.25 : 0.5));
+  const drives = workers.map(() => ({}));
+  for (const a of arenas) {
+    a.t = simT;
+    for (const f of a.flies) {
+      if (f.done !== null) continue;
+      // in Explore, the first few flies can be made unable to smell the food (they still sense the other flies)
+      const blind = mode === 'explore' && flyIndex[f.id].local < P.noSmell;
+      drives[flyIndex[f.id].worker][f.id] = senses(a, f, flyIndex[f.id].local, blind ? { ...P, smellFood: false } : P);
+    }
+  }
+  seq++;
+  const replies = await Promise.all(workers.map((w, i) =>
+    Object.keys(drives[i]).length ? call(w, { type: 'step', seq, nSteps, drives: drives[i], record: focus }) : Promise.resolve({ out: {} })));
+  simT += BODY_DT;
+  const p = { steerGain: P.steerGain, wander: P.wander, speed: P.walk, followGain: P.follow ? 3 : 0 };
+  for (const r of replies) for (const [id, res] of Object.entries(r.out)) {
+    const { fly, arenaIdx, local } = flyIndex[id];
+    const a = arenas[arenaIdx];
+    fly.move(res, BODY_DT, p);
+    if (fly.done === true) { fly.done = simT; if (a.firstAt === null) a.firstAt = simT; }
+    if (a.social) a.trails.deposit(local, fly.pos, 0.05);
+    fly.path.push(fly.pos.slice());
+    if (+id === focus) showBrain(res);
+  }
+  for (const a of arenas) if (a.social) a.trails.decay(BODY_DT);
+  updateClock();
+  checkEnd();
+}
+
+function checkEnd() {
+  const allDone = arenas.every(a => a.flies.every(f => f.done !== null));
+  if (mode === 'race') {
+    const decided = arenas.every(a => a.firstAt !== null) || simT >= P.limit;
+    if (decided) { finishRace(); return; }
+  } else if (allDone || simT >= 600) { running = false; setPlay(); }
+}
+
+function finishRace() {
+  running = false; setPlay();
+  const [solo, pack] = arenas;
+  const fed = pack.flies.filter(f => f.done !== null).length;
+  const s = solo.firstAt, pk = pack.firstAt;
+  const winner = s === null && pk === null ? '' : pk === null || (s !== null && s < pk) ? 'solo' : 'pack';
+  races.push({ maze: `${P.mazeSize}x${P.mazeSize}`, s, pk, fed: `${fed}/${pack.flies.length}`, winner });
+  renderRaces();
+  if (P.autorace) setTimeout(async () => { await setup(true, true); running = true; setPlay(); loop(); }, 1200);
+}
+
+function renderRaces() {
+  const fmt = t => t === null ? 'none' : t.toFixed(1) + ' s';
+  $('races').innerHTML = races.map((r, i) => `<tr><td>${i + 1}</td><td>${r.maze}</td><td class="${r.winner === 'solo' ? 'w-solo' : ''}">${fmt(r.s)}</td><td class="${r.winner === 'pack' ? 'w-pack' : ''}">${fmt(r.pk)}</td><td>${r.fed}</td></tr>`).reverse().join('');
+  $('soloWins').textContent = races.filter(r => r.winner === 'solo').length;
+  $('packWins').textContent = races.filter(r => r.winner === 'pack').length;
+}
+
+function updateClock() {
+  $('clock').textContent = simT.toFixed(1) + ' s';
+  const wall = (performance.now() - paceT0) / 1000, sim = simT - paceSim0;
+  if (running && wall > .5) $('pace').textContent = (sim / wall).toFixed(2) + 'x real time';
+  $('nflies').textContent = flyIndex.length;
+  arenas.forEach((a, i) => {
+    const el = $('badge' + i); if (!el) return;
+    const fed = a.flies.filter(f => f.done !== null).length;
+    el.textContent = a.firstAt !== null ? `first at ${a.firstAt.toFixed(1)} s, ${fed}/${a.flies.length} fed` : `${fed}/${a.flies.length} fed`;
+  });
+  document.querySelectorAll('.flychip').forEach(c => c.classList.toggle('done', flyIndex[+c.dataset.id]?.fly.done !== null));
+}
+
+// ---------------- 3D arenas ----------------
+let views = [];
+function buildStage() {
+  for (const v of views) { v.renderer.dispose(); }
+  views = [];
+  const stage = $('stage');
+  stage.className = mode === 'race' ? 'race' : '';
+  stage.innerHTML = arenas.map((a, i) => `<div class="arena" id="arena${i}">
+      ${a.label ? `<div class="badge"><i style="background:${a.color}"></i>${a.label}<span id="badge${i}"></span></div>` : `<div class="badge">Arena<span id="badge${i}"></span></div>`}
+      <div class="legendmaze">Drag to turn, scroll to zoom. Orange ball: food. Blue disc: start.</div></div>`).join('');
+  arenas.forEach((a, i) => views.push(makeView($('arena' + i), a)));
+  resize();
+}
+
+function makeView(el, a) {
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.shadowMap.enabled = true;
+  el.prepend(renderer.domElement);
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(css('--scene'));
+  const camera = new THREE.PerspectiveCamera(42, 1, .1, 2000);
+  const controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  scene.add(new THREE.HemisphereLight('#ffffff', '#8a96a3', 1.2));
+  const sun = new THREE.DirectionalLight('#ffffff', 1.3);
+  sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
+  scene.add(sun, sun.target);
+  const w = a.world, [W, H] = w.size;
+  // floor tinted by food smell
+  const cv = document.createElement('canvas'); cv.width = w.nx; cv.height = w.ny;
+  const cx = cv.getContext('2d'), img = cx.createImageData(w.nx, w.ny);
+  for (let i = 0; i < w.nx * w.ny; i++) {
+    const o = w.odor[i];
+    img.data.set(w.open[i] ? [236 - 40 * o, 232 - 20 * o, 214 - 90 * o, 255] : [120, 130, 140, 255], i * 4);
+  }
+  cx.putImageData(img, 0, 0);
+  const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace;
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(W, H), new THREE.MeshStandardMaterial({ map: tex, roughness: 1 }));
+  floor.rotation.x = -Math.PI / 2; floor.position.set(W / 2, 0, H / 2); floor.receiveShadow = true;
+  scene.add(floor);
+  // trail overlay
+  let trailTex = null, trailData = null;
+  if (a.social && a.flies.length > 1) {
+    trailData = new Uint8Array(w.nx * w.ny * 4);
+    trailTex = new THREE.DataTexture(trailData, w.nx, w.ny);
+    trailTex.flipY = false;
+    const tm = new THREE.Mesh(new THREE.PlaneGeometry(W, H), new THREE.MeshBasicMaterial({ map: trailTex, transparent: true, depthWrite: false }));
+    tm.rotation.x = -Math.PI / 2; tm.position.set(W / 2, .05, H / 2);
+    scene.add(tm);
+  }
+  const cells = [];
+  for (let y = 0; y < w.H; y++) for (let x = 0; x < w.W; x++) if (!w.grid[y * w.W + x]) cells.push([x, y]);
+  const wallH = 2.4;
+  const walls = new THREE.InstancedMesh(new THREE.BoxGeometry(CELL_PX, wallH, CELL_PX),
+    new THREE.MeshStandardMaterial({ color: '#7d93a8', roughness: .8 }), cells.length);
+  const m4 = new THREE.Matrix4();
+  cells.forEach(([x, y], i) => { m4.makeTranslation((x + .5) * CELL_PX, wallH / 2, (y + .5) * CELL_PX); walls.setMatrixAt(i, m4); });
+  walls.castShadow = walls.receiveShadow = true;
+  scene.add(walls);
+  const start = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 1.4, .12, 32), new THREE.MeshBasicMaterial({ color: '#2f7fd1' }));
+  start.position.set(w.start[0], .06, w.start[1]);
+  const food = new THREE.Mesh(new THREE.SphereGeometry(1.5, 24, 16), new THREE.MeshStandardMaterial({ color: '#e08a1e', emissive: '#5a3000' }));
+  food.position.set(w.exit[0], 1.5, w.exit[1]);
+  scene.add(start, food);
+  const flies = a.flies.map(f => {
+    const g = makeFly(f.color); scene.add(g);
+    const max = 60000, arr = new Float32Array(max * 3);
+    const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(arr, 3)); geo.setDrawRange(0, 0);
+    const line = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: f.color, transparent: true, opacity: .7 }));
+    scene.add(line);
+    return { f, g, line, arr, n: 0, max };
+  });
+  const span = Math.max(W, H);
+  controls.target.set(W / 2, 0, H / 2);
+  Object.assign(sun.shadow.camera, { left: -span, right: span, top: span, bottom: -span, far: 500 });
+  sun.position.set(W * .7, 120, H * .2); sun.target.position.set(W / 2, 0, H / 2);
+  return { el, renderer, scene, camera, controls, flies, a, trailTex, trailData };
+}
+
+function makeFly(color) {
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 14), new THREE.MeshStandardMaterial({ color, roughness: .45 }));
+  body.scale.set(1.3, .55, .6); body.position.y = .7; body.castShadow = true;
+  const head = new THREE.Mesh(new THREE.SphereGeometry(.42, 16, 12), new THREE.MeshStandardMaterial({ color: '#8c2a18' }));
+  head.position.set(1.3, .75, 0);
+  const wingMat = new THREE.MeshStandardMaterial({ color: '#ffffff', transparent: true, opacity: .55, side: THREE.DoubleSide });
+  for (const s of [-1, 1]) {
+    const wg = new THREE.Mesh(new THREE.CircleGeometry(.95, 20), wingMat);
+    wg.scale.set(1.35, .45, 1); wg.rotation.x = -Math.PI / 2; wg.rotation.z = s * .35; wg.position.set(-.6, 1.15, s * .48);
+    g.add(wg);
+  }
+  g.add(body, head);
+  return g;
+}
+
+let trailFrame = 0;
+function renderViews() {
+  trailFrame++;
+  for (const v of views) {
+    for (const o of v.flies) {
+      o.g.position.set(o.f.pos[0], 0, o.f.pos[1]);
+      o.g.rotation.y = -o.f.head;
+      while (o.n < o.f.path.length && o.n < o.max) { const p = o.f.path[o.n]; o.arr.set([p[0], .12, p[1]], o.n * 3); o.n++; }
+      o.line.geometry.setDrawRange(0, o.n); o.line.geometry.attributes.position.needsUpdate = true;
+      o.g.scale.setScalar(o.f.id === focus ? 1.25 : 1);
+    }
+    if (v.trailTex && trailFrame % 10 === 0) {
+      const t = v.a.trails.total, d = v.trailData, w = v.a.world;
+      // food mark left by fed flies, drawn in purple over the pink smell trails
+      let mark = 0;
+      if (P.follow) for (const f of v.a.flies) if (typeof f.done === 'number') mark += 1 - Math.exp(-Math.max(0, simT - f.done) / 8);
+      for (let y = 0; y < w.ny; y++) for (let x = 0; x < w.nx; x++) {
+        const i = y * w.nx + x, k = ((w.ny - 1 - y) * w.nx + x) * 4;
+        const s = Math.min(1, t[i] * 1.5), m = mark > 0 && isFinite(w.distExit[i]) ? Math.min(1, mark * Math.exp(-w.distExit[i] / 30) * 2) : 0;
+        if (m > s) { d[k] = 138; d[k + 1] = 92; d[k + 2] = 214; d[k + 3] = m * 190; }
+        else { d[k] = 207; d[k + 1] = 77; d[k + 2] = 111; d[k + 3] = s * 170; }
+      }
+      v.trailTex.needsUpdate = true;
+    }
+    v.controls.update();
+    v.renderer.render(v.scene, v.camera);
+  }
+}
+
+// ---------------- brain view ----------------
+let fullIndex, bRenderer, bScene, bCam, bControls, bPoints, bColors, bBase, activity, regionOf, nCloud;
+const regionRGB = REGION_COLORS.map(h => { const c = new THREE.Color(h); return [c.r, c.g, c.b]; });
+function buildBrainView() {
+  const box = $('brainbox');
+  bRenderer = new THREE.WebGLRenderer({ antialias: true });
+  bRenderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  box.appendChild(bRenderer.domElement);
+  bScene = new THREE.Scene(); bScene.background = new THREE.Color('#0f151b');
+  bCam = new THREE.PerspectiveCamera(38, 1, .01, 100); bCam.position.set(0, .35, 3.0);
+  bControls = new OrbitControls(bCam, bRenderer.domElement);
+  bControls.enableDamping = true; bControls.autoRotate = !matchMedia('(prefers-reduced-motion: reduce)').matches; bControls.autoRotateSpeed = .5;
+  nCloud = cloud.byteLength / 13;
+  const xyz = new Float32Array(cloud, 0, nCloud * 3);
+  regionOf = new Uint8Array(cloud, nCloud * 12, nCloud);
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(xyz, 3));
+  bColors = new Float32Array(nCloud * 3); bBase = new Float32Array(nCloud * 3); activity = new Float32Array(nCloud);
+  for (let i = 0; i < nCloud; i++) { const c = regionRGB[regionOf[i]]; bBase[3 * i] = c[0] * .004; bBase[3 * i + 1] = c[1] * .004; bBase[3 * i + 2] = c[2] * .004; }
+  bColors.set(bBase);
+  geo.setAttribute('color', new THREE.BufferAttribute(bColors, 3));
+  bPoints = new THREE.Points(geo, new THREE.PointsMaterial({ size: .013, vertexColors: true, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
+  bScene.add(bPoints);
+}
+const regMax = new Array(16).fill(1);
+function showBrain(res) {
+  if (res.spiked) for (const k of res.spiked) activity[fullIndex[k]] = 1;
+  res.reg.forEach((v, r) => {
+    const hz = v / BODY_DT / Math.max(1, meta.regionSizes ? meta.regionSizes[r] : 1);
+    regMax[r] = Math.max(regMax[r] * .995, v, 1);
+    const el = $('rb' + r); if (el) el.style.width = Math.min(100, 100 * v / regMax[r]) + '%';
+    const o = $('rv' + r); if (o) o.textContent = Math.round(v);
+  });
+  const f = flyIndex[focus]?.fly;
+  if (f) $('steerdot').style.left = (50 - Math.max(-48, Math.min(48, f.steer * 24))) + '%';
+}
+function decayBrain() {
+  for (let i = 0; i < nCloud; i++) {
+    const a = activity[i];
+    if (a > .01) {
+      activity[i] = a * .86; const k = 3 * i, c = regionRGB[regionOf[i]];
+      bColors[k] = bBase[k] + a * (.5 + c[0]); bColors[k + 1] = bBase[k + 1] + a * (.5 + c[1]); bColors[k + 2] = bBase[k + 2] + a * (.5 + c[2]);
+    } else if (a > 0) { activity[i] = 0; const k = 3 * i; bColors[k] = bBase[k]; bColors[k + 1] = bBase[k + 1]; bColors[k + 2] = bBase[k + 2]; }
+  }
+  bPoints.geometry.attributes.color.needsUpdate = true;
+}
+
+function buildChips() {
+  $('flychips').innerHTML = flyIndex.map((f, i) => {
+    const tag = mode === 'race' ? (f.arenaIdx === 0 ? 'solo' : `pack ${f.local + 1}`) : `fly ${i + 1}${f.local < P.noSmell ? ' (no smell)' : ''}`;
+    return `<button class="flychip" data-id="${i}" aria-pressed="${i === focus}"><i style="background:${f.fly.color}"></i>${tag}</button>`;
+  }).join('');
+  document.querySelectorAll('.flychip').forEach(c => c.onclick = () => {
+    focus = +c.dataset.id; activity.fill(0);
+    document.querySelectorAll('.flychip').forEach(x => x.setAttribute('aria-pressed', String(x === c)));
+    $('focusname').textContent = c.textContent.replace('fed', '').trim();
+  });
+  $('focusname').textContent = mode === 'race' ? 'solo' : 'fly 1';
+}
+
+// ---------------- controls ----------------
+function setPlay() { $('playbtn').textContent = running ? 'Pause' : 'Play'; }
+$('playbtn').onclick = () => {
+  if (running) { running = false; setPlay(); return; }
+  running = true; setPlay(); loop();
+};
+$('resetbtn').onclick = () => setup(false, false);
+$('newMaze').onclick = () => setup(true, false);
+$('newFlies').onclick = () => setup(false, true);
+for (const k of Object.keys(sliders)) $(k).addEventListener('input', readControls);
+for (const k of ['smellEach', 'seeEach', 'follow', 'smellFood', 'precise', 'autorace']) $(k).addEventListener('change', readControls);
+$('mazeSize').addEventListener('change', () => setup(true, false));
+$('complexity').addEventListener('change', () => setup(true, false));
+$('nFlies').addEventListener('change', () => setup(false, true));
+$('noSmell').addEventListener('change', () => { readControls(); buildChips(); });
+$('packSize').addEventListener('change', () => setup(false, true));
+
+function setMode(m) {
+  mode = m;
+  $('tab-explore').setAttribute('aria-selected', String(m === 'explore'));
+  $('tab-race').setAttribute('aria-selected', String(m === 'race'));
+  $('row-flies').hidden = m === 'race'; $('row-nosmell').hidden = m === 'race'; $('row-pack').hidden = m !== 'race';
+  $('racecard').hidden = m !== 'race';
+  setup(false, true);
+}
+$('tab-explore').onclick = () => setMode('explore');
+$('tab-race').onclick = () => setMode('race');
+
+function resize() {
+  for (const v of views) {
+    const r = v.el.getBoundingClientRect();
+    v.renderer.setSize(r.width, r.height, false); v.camera.aspect = r.width / Math.max(1, r.height); v.camera.updateProjectionMatrix();
+    // back the camera off far enough that the whole maze fits, also in tall narrow panels
+    const [W, H] = v.a.world.size, span = Math.max(W, H);
+    const dist = span * 1.25 * Math.max(1, 1 / v.camera.aspect);
+    v.camera.position.set(W / 2, dist * .82, H / 2 + dist * .58);
+  }
+  if (bRenderer) {
+    const b = $('brainbox').getBoundingClientRect();
+    bRenderer.setSize(b.width, b.height, false); bCam.aspect = b.width / Math.max(1, b.height); bCam.updateProjectionMatrix();
+  }
+}
+addEventListener('resize', resize);
+new ResizeObserver(resize).observe($('stage'));
+
+const noRender = location.hash === '#norender';  // for timing tests
+const capture = location.hash === '#capture';    // frame-by-frame recording: the recorder steps and draws
+function draw() {
+  renderViews();
+  if (bPoints) { decayBrain(); bControls.update(); bRenderer.render(bScene, bCam); }
+}
+function frame() {
+  requestAnimationFrame(frame);
+  if (noRender || capture) return;
+  draw();
+}
+if (capture) window.__cap = {
+  setup: () => setup(true, true),
+  seeded: (m, f) => { mazeSeed = m; seedBase = f; return setup(false, false); },
+  step: async n => { for (let i = 0; i < n; i++) await stepAll(); return { t: simT, fed: flyIndex.map(f => f.fly.done) }; },
+  draw,
+  focus: id => document.querySelector(`.flychip[data-id="${id}"]`)?.click(),
+};
+requestAnimationFrame(frame);
+boot().then(resize).catch(err => { $('loadmsg').textContent = 'The brain did not load: ' + err.message + '. Reload the page to try again.'; });
+</script>

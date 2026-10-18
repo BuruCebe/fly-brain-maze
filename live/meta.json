@@ -1,0 +1,26 @@
+{
+ "regions": [
+  "Smell receptors",
+  "Antennal lobe",
+  "Mushroom body",
+  "Lateral horn",
+  "Central complex",
+  "Descending neurons",
+  "Steering (DNa02)",
+  "Other central brain",
+  "Optic lobes",
+  "Other senses",
+  "Motor / other"
+ ],
+ "K": 29996,
+ "E": 4311374,
+ "counts": {
+  "foodL": 150,
+  "foodR": 144,
+  "trailL": 154,
+  "trailR": 149,
+  "dep": 2172,
+  "visL": 841,
+  "visR": 837
+ }
+}

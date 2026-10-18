@@ -1,0 +1,486 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fly Brain Maze</title>
+<style>
+  :root {
+    --bg: #0f1216; --panel: #161b21; --line: #262d36; --text: #e6e9ee; --muted: #8b95a3;
+    --accent: #e0a040; --good: #5fbf7a; --bad: #d9665b;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font: 13px/1.4 -apple-system, "Segoe UI", Roboto, sans-serif; }
+  #app { display: grid; grid-template-columns: 260px 1fr 380px; grid-template-rows: 44px 1fr; height: 100vh; }
+  header { grid-column: 1 / -1; display: flex; align-items: center; gap: 16px; padding: 0 16px;
+    border-bottom: 1px solid var(--line); background: var(--panel); }
+  header h1 { font-size: 15px; margin: 0; font-weight: 600; }
+  #status { color: var(--muted); }
+  #status b { color: var(--text); font-weight: 600; }
+  aside { background: var(--panel); border-right: 1px solid var(--line); padding: 12px 14px; overflow-y: auto; }
+  aside h2, #side h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
+    margin: 14px 0 6px; font-weight: 600; }
+  aside h2:first-child { margin-top: 0; }
+  label.row { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin: 5px 0; }
+  label.row span.v { color: var(--muted); min-width: 30px; text-align: right; }
+  input[type=range] { width: 110px; }
+  select, button { font: inherit; color: var(--text); background: #1f262e; border: 1px solid var(--line);
+    border-radius: 6px; padding: 5px 8px; }
+  select { width: 100%; }
+  button { cursor: pointer; }
+  button.primary { background: var(--accent); color: #1a1205; border-color: var(--accent); font-weight: 600; }
+  button:disabled { opacity: .5; cursor: default; }
+  .btns { display: flex; gap: 6px; margin-top: 10px; }
+  .btns button { flex: 1; }
+  .check { display: flex; align-items: center; gap: 6px; margin: 3px 0; }
+  .hint { color: var(--muted); font-size: 12px; margin: 4px 0 0; }
+  #maze { position: relative; min-width: 0; }
+  #maze canvas, #brain canvas { display: block; width: 100%; height: 100%; }
+  #overlay { position: absolute; left: 12px; bottom: 12px; color: var(--muted); font-size: 12px;
+    background: rgba(15,18,22,.75); padding: 6px 10px; border-radius: 6px; }
+  #side { background: var(--panel); border-left: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
+  #brainwrap { position: relative; height: 46%; min-height: 220px; border-bottom: 1px solid var(--line); }
+  #brain { position: absolute; inset: 0; }
+  #brainlabel { position: absolute; left: 10px; top: 8px; font-size: 12px; color: var(--muted); pointer-events: none; }
+  #brainlabel b { color: var(--text); }
+  #steer { position: absolute; left: 10px; right: 10px; bottom: 8px; display: grid; grid-template-columns: auto 1fr 1fr; gap: 4px 8px;
+    font-size: 11px; color: var(--muted); align-items: center; pointer-events: none; }
+  .bar { height: 6px; background: #222a33; border-radius: 3px; overflow: hidden; }
+  .bar i { display: block; height: 100%; background: var(--accent); width: 0; }
+  #packwrap { flex: 1; overflow: auto; padding: 0 12px 12px; }
+  #pack { border-collapse: collapse; width: 100%; font-size: 11px; }
+  #pack th { color: var(--muted); font-weight: 500; writing-mode: vertical-rl; transform: rotate(180deg);
+    height: 96px; text-align: left; padding: 2px; vertical-align: bottom; }
+  #pack td { padding: 0; height: 16px; border: 1px solid var(--bg); }
+  #pack td.name { padding: 0 6px; white-space: nowrap; color: var(--muted); cursor: pointer; border: 0; }
+  #pack tr.focus td.name { color: var(--text); font-weight: 600; }
+  #pack tr { cursor: pointer; }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 11px; color: var(--muted); padding: 8px 12px 0; }
+  .legend i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; }
+  @media (max-width: 1000px) {
+    #app { grid-template-columns: 1fr; grid-template-rows: 44px auto 60vh auto; height: auto; }
+    aside, #side { border: 0; }
+    #side { min-height: 600px; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>Fly Brain Maze</h1>
+    <div id="status">Connecting...</div>
+  </header>
+
+  <aside>
+    <h2>Experiment</h2>
+    <select id="preset">
+      <option value="single">One fly that can smell</option>
+      <option value="blind">One fly with no smell (control)</option>
+      <option value="pack_trail">Pack that smells each other's trails</option>
+      <option value="pack_solo">Pack that ignores each other</option>
+      <option value="silence_mb">One fly, mushroom body silenced</option>
+      <option value="silence_lh">One fly, lateral horn silenced</option>
+      <option value="custom">Custom</option>
+    </select>
+
+    <h2>Setup</h2>
+    <label class="row">Flies <input id="flies" type="range" min="1" max="20" value="1"><span class="v" id="flies_v">1</span></label>
+    <label class="row">Maze size <input id="maze_w" type="range" min="2" max="6" value="3"><span class="v" id="maze_w_v">3</span></label>
+    <label class="row">Maze layout <input id="maze_seed" type="range" min="0" max="20" value="0"><span class="v" id="maze_seed_v">0</span></label>
+    <label class="row">Time limit (s) <input id="t_max" type="range" min="10" max="180" step="10" value="90"><span class="v" id="t_max_v">90</span></label>
+    <label class="row">Smell contrast <input id="contrast" type="range" min="0" max="12" value="10"><span class="v" id="contrast_v">10</span></label>
+    <label class="row">Random seed <input id="seed" type="range" min="0" max="50" value="0"><span class="v" id="seed_v">0</span></label>
+    <div class="check"><input id="smell" type="checkbox" checked><label for="smell">Food smell at the exit</label></div>
+    <div class="check"><input id="trail" type="checkbox"><label for="trail">Flies leave a smell trail</label></div>
+
+    <h2>Silence brain regions</h2>
+    <div id="silence"></div>
+    <p class="hint">Silencing cuts every synapse to and from that region, like turning those neurons off.</p>
+
+    <div class="btns">
+      <button class="primary" id="start">Run</button>
+      <button id="pause" disabled>Pause</button>
+      <button id="stop" disabled>Stop</button>
+    </div>
+    <p class="hint">Every neuron is simulated, so a run is slower than real life. Each run is saved, so you can replay it at full speed below.</p>
+
+    <h2>Replay a saved run</h2>
+    <select id="runs"></select>
+    <label class="row">Speed <input id="speed" type="range" min="0.25" max="4" step="0.25" value="1"><span class="v" id="speed_v">1x</span></label>
+    <div class="btns"><button id="replay">Replay</button></div>
+  </aside>
+
+  <div id="maze"><div id="overlay">Drag to orbit, scroll to zoom. Star: food. Blue dot: start.</div></div>
+
+  <div id="side">
+    <div id="brainwrap">
+      <div id="brain"></div>
+      <div id="brainlabel">Brain of <b id="focusname">fly 1</b></div>
+      <div id="steer">
+        <span>DNa02 left</span><div class="bar"><i id="barL"></i></div><span id="hzL">0 Hz</span>
+        <span>DNa02 right</span><div class="bar"><i id="barR"></i></div><span id="hzR">0 Hz</span>
+      </div>
+    </div>
+    <div class="legend" id="legend"></div>
+    <div id="packwrap">
+      <h2>All brains (average firing per region)</h2>
+      <table id="pack"></table>
+    </div>
+  </div>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "/vendor/three.module.js",
+  "three/addons/": "/vendor/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/OrbitControls.js';
+
+const $ = id => document.getElementById(id);
+const REGION_COLORS = ['#f2c14e', '#f78154', '#b56576', '#9d79bc', '#4d9de0', '#e15554', '#ff3d7f',
+                       '#7bb07b', '#3bb5a8', '#c9a227', '#6c7a89'];
+const FLY_COLORS = ['#f2c14e', '#4d9de0', '#e15554', '#3bb273', '#9d79bc', '#f78154', '#3bb5a8', '#ff3d7f',
+                    '#c9a227', '#7bb07b', '#b56576', '#56cfe1', '#e4a1ff', '#ffd6a5', '#a0c4ff', '#caffbf',
+                    '#ffadad', '#bdb2ff', '#9bf6ff', '#fdffb6'];
+
+let REGIONS = [];
+let N = 0;
+let mode = 'idle';   // idle | live | replay
+let focus = 0;
+let nFlies = 0;
+
+// ---------- controls ----------
+const sliders = ['flies', 'maze_w', 'maze_seed', 't_max', 'contrast', 'seed'];
+for (const s of sliders) {
+  const el = $(s), out = $(s + '_v');
+  el.addEventListener('input', () => { out.textContent = el.value; $('preset').value = 'custom'; });
+}
+$('speed').addEventListener('input', () => $('speed_v').textContent = $('speed').value + 'x');
+for (const id of ['smell', 'trail']) $(id).addEventListener('change', () => $('preset').value = 'custom');
+
+const PRESETS = {
+  single:     { flies: 1, smell: true, trail: false, silence: [] },
+  blind:      { flies: 1, smell: false, trail: false, silence: [] },
+  pack_trail: { flies: 10, smell: true, trail: true, silence: [] },
+  pack_solo:  { flies: 10, smell: true, trail: false, silence: [] },
+  silence_mb: { flies: 1, smell: true, trail: false, silence: ['Mushroom body'] },
+  silence_lh: { flies: 1, smell: true, trail: false, silence: ['Lateral horn'] },
+};
+$('preset').addEventListener('change', () => {
+  const p = PRESETS[$('preset').value];
+  if (!p) return;
+  $('flies').value = p.flies; $('flies_v').textContent = p.flies;
+  $('smell').checked = p.smell; $('trail').checked = p.trail;
+  document.querySelectorAll('#silence input').forEach(c => c.checked = p.silence.includes(c.value));
+});
+
+function params() {
+  return {
+    flies: +$('flies').value, maze_w: +$('maze_w').value, maze_h: +$('maze_w').value,
+    maze_seed: +$('maze_seed').value, t_max: +$('t_max').value, contrast: +$('contrast').value,
+    seed: +$('seed').value, smell: $('smell').checked, trail: $('trail').checked,
+    silence: [...document.querySelectorAll('#silence input:checked')].map(c => c.value),
+  };
+}
+const post = (url, body = {}) => fetch(url, { method: 'POST', body: JSON.stringify(body) }).then(r => r.json());
+$('start').onclick = () => { stopReplay(); post('/start', params()); };
+$('pause').onclick = async () => { const r = await post('/pause'); $('pause').textContent = r.paused ? 'Resume' : 'Pause'; };
+$('stop').onclick = () => post('/stop');
+$('replay').onclick = () => replay($('runs').value);
+
+async function loadRuns(select) {
+  const runs = await fetch('/runs').then(r => r.json());
+  $('runs').innerHTML = runs.map(r => `<option>${r}</option>`).join('') || '<option value="">No saved runs yet</option>';
+  if (select) $('runs').value = select;
+}
+
+function setStatus(html) { $('status').innerHTML = html; }
+
+// ---------- maze scene ----------
+const mazeEl = $('maze');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+mazeEl.prepend(renderer.domElement);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#0f1216');
+const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+scene.add(new THREE.HemisphereLight('#dfe8f5', '#20242a', 1.1));
+const sun = new THREE.DirectionalLight('#ffffff', 1.6);
+sun.position.set(30, 60, 20);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+scene.add(sun);
+
+let mazeGroup = null, flies = [], trails = [], startPos = [0, 0];
+
+function buildMaze(m) {
+  if (mazeGroup) scene.remove(mazeGroup);
+  mazeGroup = new THREE.Group();
+  const [W, H] = m.size;
+  startPos = m.start;
+  // floor coloured by how strong the food smell is
+  const od = m.odor, oh = od.length, ow = od[0].length;
+  const cv = document.createElement('canvas'); cv.width = ow; cv.height = oh;
+  const cx = cv.getContext('2d'), img = cx.createImageData(ow, oh);
+  for (let y = 0; y < oh; y++) for (let x = 0; x < ow; x++) {
+    const v = od[y][x], i = (y * ow + x) * 4;
+    const c = v < 0 ? [30, 34, 40] : [36 + 40 * v, 48 + 140 * v, 44 + 50 * v];
+    img.data.set([...c, 255], i);
+  }
+  cx.putImageData(img, 0, 0);
+  const tex = new THREE.CanvasTexture(cv);
+  tex.magFilter = THREE.LinearFilter;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(W, H), new THREE.MeshStandardMaterial({ map: tex, roughness: .9 }));
+  floor.rotation.x = -Math.PI / 2;
+  floor.position.set(W / 2, 0, H / 2);
+  floor.receiveShadow = true;
+  mazeGroup.add(floor);
+  // walls
+  const cells = [];
+  m.grid.forEach((row, y) => row.forEach((open, x) => { if (!open) cells.push([x, y]); }));
+  const wallH = 2.2;
+  const walls = new THREE.InstancedMesh(new THREE.BoxGeometry(m.px, wallH, m.px),
+    new THREE.MeshStandardMaterial({ color: '#c9ccd1', roughness: .7 }), cells.length);
+  const mat = new THREE.Matrix4();
+  cells.forEach(([x, y], i) => { mat.makeTranslation((x + .5) * m.px, wallH / 2, (y + .5) * m.px); walls.setMatrixAt(i, mat); });
+  walls.castShadow = walls.receiveShadow = true;
+  mazeGroup.add(walls);
+  // start and food markers
+  const start = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.2, .1, 32), new THREE.MeshBasicMaterial({ color: '#4d9de0' }));
+  start.position.set(m.start[0], .05, m.start[1]);
+  const food = new THREE.Mesh(new THREE.SphereGeometry(1.4, 24, 16), new THREE.MeshStandardMaterial({ color: '#e0a040', emissive: '#7a4a10' }));
+  food.position.set(m.exit[0], 1.4, m.exit[1]);
+  mazeGroup.add(start, food);
+  scene.add(mazeGroup);
+  camera.position.set(W * .5, Math.max(W, H) * 1.15, H * 1.35);
+  controls.target.set(W / 2, 0, H / 2);
+  sun.shadow.camera.left = -W; sun.shadow.camera.right = W; sun.shadow.camera.top = H; sun.shadow.camera.bottom = -H;
+  sun.position.set(W * .7, 60, H * .3); sun.target.position.set(W / 2, 0, H / 2); scene.add(sun.target);
+}
+
+function makeFly(color) {
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 14), new THREE.MeshStandardMaterial({ color, roughness: .5 }));
+  body.scale.set(1.25, .5, .55); body.position.y = .6; body.castShadow = true;
+  const head = new THREE.Mesh(new THREE.SphereGeometry(.38, 16, 12), new THREE.MeshStandardMaterial({ color: '#7a2a1a' }));
+  head.position.set(1.25, .65, 0);
+  const wingMat = new THREE.MeshStandardMaterial({ color: '#dfe7ef', transparent: true, opacity: .45, side: THREE.DoubleSide });
+  for (const s of [-1, 1]) {
+    const w = new THREE.Mesh(new THREE.CircleGeometry(.9, 20), wingMat);
+    w.scale.set(1.3, .45, 1); w.rotation.x = -Math.PI / 2; w.rotation.z = s * .35;
+    w.position.set(-.6, 1.0, s * .45);
+    g.add(w);
+  }
+  g.add(body, head);
+  return g;
+}
+
+function setupFlies(n) {
+  for (const f of flies) scene.remove(f);
+  for (const t of trails) scene.remove(t.line);
+  flies = []; trails = [];
+  nFlies = n;
+  for (let i = 0; i < n; i++) {
+    const f = makeFly(FLY_COLORS[i % FLY_COLORS.length]);
+    f.position.set(startPos[0], 0, startPos[1]);
+    scene.add(f); flies.push(f);
+    const max = 20000, arr = new Float32Array(max * 3);
+    const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(arr, 3)); geo.setDrawRange(0, 0);
+    const line = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: FLY_COLORS[i % FLY_COLORS.length], transparent: true, opacity: .8 }));
+    scene.add(line); trails.push({ line, arr, n: 0, max });
+  }
+  buildPack(n);
+}
+
+function updateFlies(fr) {
+  fr.pos.forEach(([x, y], i) => {
+    const f = flies[i]; if (!f) return;
+    f.position.set(x, 0, y);
+    f.rotation.y = -fr.head[i];
+    const t = trails[i];
+    if (t.n < t.max) { t.arr.set([x, .15, y], t.n * 3); t.n++; t.line.geometry.setDrawRange(0, t.n); t.line.geometry.attributes.position.needsUpdate = true; }
+  });
+}
+
+// ---------- brain scene ----------
+const brainEl = $('brain');
+const bRenderer = new THREE.WebGLRenderer({ antialias: true });
+bRenderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+brainEl.appendChild(bRenderer.domElement);
+const bScene = new THREE.Scene();
+bScene.background = new THREE.Color('#161b21');
+const bCam = new THREE.PerspectiveCamera(40, 1, .01, 100);
+bCam.position.set(0, .4, 3.0);
+const bControls = new OrbitControls(bCam, bRenderer.domElement);
+bControls.enableDamping = true; bControls.autoRotate = true; bControls.autoRotateSpeed = .6;
+let bColors, bBase, activity, regionOf, bPoints;
+const regionRGB = REGION_COLORS.map(h => { const c = new THREE.Color(h); return [c.r, c.g, c.b]; });
+
+async function loadBrain() {
+  const meta = await fetch('/meta').then(r => r.json());
+  REGIONS = meta.regions; N = meta.n;
+  $('silence').innerHTML = REGIONS.slice(0, -1).map((r, i) =>
+    `<div class="check"><input type="checkbox" id="sil${i}" value="${r}"><label for="sil${i}">${r}</label></div>`).join('');
+  $('legend').innerHTML = REGIONS.map((r, i) => `<span><i style="background:${REGION_COLORS[i]}"></i>${r}</span>`).join('');
+  buildMaze(meta.maze);
+  const buf = await fetch('/brain.bin').then(r => r.arrayBuffer());
+  const xyz = new Float32Array(buf, 0, N * 3);
+  regionOf = new Uint8Array(buf, N * 12, N);
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(xyz, 3));
+  bColors = new Float32Array(N * 3); bBase = new Float32Array(N * 3); activity = new Float32Array(N);
+  const c = new THREE.Color();
+  for (let i = 0; i < N; i++) {
+    c.set(REGION_COLORS[regionOf[i]]);
+    bBase[i * 3] = c.r * .006; bBase[i * 3 + 1] = c.g * .006; bBase[i * 3 + 2] = c.b * .006;
+  }
+  bColors.set(bBase);
+  geo.setAttribute('color', new THREE.BufferAttribute(bColors, 3));
+  bPoints = new THREE.Points(geo, new THREE.PointsMaterial({ size: .012, vertexColors: true, sizeAttenuation: true,
+    blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
+  bScene.add(bPoints);
+  return meta;
+}
+
+function brainSpikes(idx) { for (const i of idx) activity[i] = 1; }
+
+function decayBrain() {
+  if (!bColors) return;
+  for (let i = 0; i < N; i++) {
+    const a = activity[i];
+    if (a > 0.01) {
+      activity[i] = a * .88;
+      const k = 3 * i;
+      const c = regionRGB[regionOf[i]]; bColors[k] = bBase[k] + a * (.5 + c[0]); bColors[k + 1] = bBase[k + 1] + a * (.5 + c[1]); bColors[k + 2] = bBase[k + 2] + a * (.5 + c[2]);
+    } else if (a > 0) {
+      activity[i] = 0; bColors[3 * i] = bBase[3 * i]; bColors[3 * i + 1] = bBase[3 * i + 1]; bColors[3 * i + 2] = bBase[3 * i + 2];
+    }
+  }
+  bPoints.geometry.attributes.color.needsUpdate = true;
+}
+
+// ---------- pack table ----------
+function buildPack(n) {
+  const head = '<tr><th></th>' + REGIONS.map((r, i) => `<th style="color:${REGION_COLORS[i]}">${r}</th>`).join('') + '<th>Status</th></tr>';
+  let rows = '';
+  for (let f = 0; f < n; f++) {
+    rows += `<tr data-f="${f}"><td class="name"><span style="color:${FLY_COLORS[f % FLY_COLORS.length]}">●</span> fly ${f + 1}</td>` +
+      REGIONS.map(() => '<td></td>').join('') + '<td class="name st">walking</td></tr>';
+  }
+  $('pack').innerHTML = head + rows;
+  $('pack').querySelectorAll('tr[data-f]').forEach(tr => tr.onclick = () => setFocus(+tr.dataset.f));
+  markFocus();
+}
+function markFocus() {
+  $('pack').querySelectorAll('tr[data-f]').forEach(tr => tr.classList.toggle('focus', +tr.dataset.f === focus));
+  $('focusname').textContent = 'fly ' + (focus + 1);
+}
+function setFocus(f) {
+  focus = f; markFocus(); activity.fill(0);
+  if (mode === 'live') post('/focus', { fly: f });
+}
+const regMax = new Array(32).fill(1);
+function updatePack(fr) {
+  const trs = $('pack').querySelectorAll('tr[data-f]');
+  fr.reg.forEach((row, f) => {
+    const tds = trs[f]?.children; if (!tds) return;
+    row.forEach((v, r) => {
+      regMax[r] = Math.max(regMax[r] * .999, v, 1);
+      const a = Math.min(1, v / regMax[r]);
+      const c = new THREE.Color(REGION_COLORS[r]).multiplyScalar(.15 + .85 * a);
+      tds[r + 1].style.background = '#' + c.getHexString();
+      tds[r + 1].title = `${REGIONS[r]}: ${v.toFixed(1)} Hz average`;
+    });
+    tds[tds.length - 1].textContent = fr.done[f] != null ? `found food at ${fr.done[f].toFixed(1)} s` : 'walking';
+    tds[tds.length - 1].style.color = fr.done[f] != null ? 'var(--good)' : '';
+  });
+  const [l, r] = fr.dna02[focus] || [0, 0];
+  $('barL').style.width = Math.min(100, l) + '%'; $('barR').style.width = Math.min(100, r) + '%';
+  $('hzL').textContent = l.toFixed(0) + ' Hz'; $('hzR').textContent = r.toFixed(0) + ' Hz';
+}
+
+function applyFrame(fr) {
+  updateFlies(fr);
+  updatePack(fr);
+  if (fr.focus === focus) brainSpikes(fr.spiked);
+  const found = fr.done.filter(d => d != null).length;
+  const pace = fr.wall ? ` (${(fr.wall / fr.t).toFixed(0)}x slower than real time)` : '';
+  setStatus(`${mode === 'replay' ? 'Replay' : 'Running'}: <b>${fr.t.toFixed(1)} s</b> simulated${mode === 'live' ? pace : ''}. Found food: <b>${found}/${fr.done.length}</b>`);
+}
+
+function onStart(h) {
+  buildMaze(h.maze); setupFlies(h.flies); focus = 0; markFocus(); activity.fill(0);
+}
+
+// ---------- live stream ----------
+function connect() {
+  const es = new EventSource('/stream');
+  es.onmessage = e => {
+    const m = JSON.parse(e.data);
+    if (m.type === 'status') {
+      if (m.state === 'loading') setStatus('Building the brains...');
+      else if (m.state === 'idle') setStatus('Ready. Pick an experiment and press Run.');
+      setButtons(m.state !== 'idle');
+    } else if (m.type === 'start') { mode = 'live'; onStart(m); setButtons(true); }
+    else if (m.type === 'frame' && mode === 'live') applyFrame(m);
+    else if (m.type === 'end') {
+      const found = m.done.filter(d => d != null).length;
+      setStatus(`Finished at <b>${m.t} s</b>. Found food: <b>${found}/${m.done.length}</b>. Saved as ${m.name}.`);
+      setButtons(false); mode = 'idle'; loadRuns(m.name);
+    }
+  };
+  es.onerror = () => setStatus('Lost connection to the simulator. Is server.py still running?');
+}
+function setButtons(running) {
+  $('start').disabled = running; $('pause').disabled = !running; $('stop').disabled = !running;
+  if (!running) $('pause').textContent = 'Pause';
+}
+
+// ---------- replay ----------
+let replayTimer = null;
+function stopReplay() { if (replayTimer) cancelAnimationFrame(replayTimer); replayTimer = null; }
+async function replay(name) {
+  if (!name) return;
+  stopReplay();
+  const text = await fetch('/runs/' + name).then(r => r.text());
+  const lines = text.trim().split('\n').map(l => JSON.parse(l));
+  const header = lines[0], frames = lines.filter(l => l.type === 'frame');
+  mode = 'replay'; onStart(header);
+  let i = 0, t0 = performance.now();
+  const tick = () => {
+    const simT = (performance.now() - t0) / 1000 * +$('speed').value;
+    while (i < frames.length && frames[i].t <= simT) { applyFrame(frames[i]); i++; }
+    if (i < frames.length) replayTimer = requestAnimationFrame(tick);
+    else { mode = 'idle'; const d = frames.at(-1)?.done || []; setStatus(`Replay finished. Found food: <b>${d.filter(x => x != null).length}/${d.length}</b>`); }
+  };
+  tick();
+}
+
+// ---------- loop ----------
+function resize() {
+  const r = mazeEl.getBoundingClientRect();
+  renderer.setSize(r.width, r.height, false); camera.aspect = r.width / r.height; camera.updateProjectionMatrix();
+  const b = brainEl.getBoundingClientRect();
+  bRenderer.setSize(b.width, b.height, false); bCam.aspect = b.width / b.height; bCam.updateProjectionMatrix();
+}
+addEventListener('resize', resize);
+function animate() {
+  requestAnimationFrame(animate);
+  controls.update(); bControls.update(); decayBrain();
+  renderer.render(scene, camera); bRenderer.render(bScene, bCam);
+}
+
+await loadBrain();
+setupFlies(1);
+resize(); animate(); connect(); loadRuns();
+</script>
+</body>
+</html>
